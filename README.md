@@ -1,22 +1,22 @@
-# T-Doll RAG Assistant
+# RAG Research Assistant
 
-A Streamlit-based Retrieval-Augmented Generation (RAG) assistant built with OpenAI models and ChromaDB.
+A lightweight Retrieval-Augmented Generation (RAG) application built with Python, Streamlit, OpenAI, and ChromaDB.
 
-The project explores semantic retrieval, document ingestion, web ingestion, intent routing, and context-grounded response generation.
+The project combines semantic retrieval, structured intent routing, local document ingestion, and web-content ingestion to generate responses grounded in indexed knowledge.
 
 ## Features
 
-- Streamlit chat interface
-- OpenAI-powered language model responses
-- Structured intent routing with Pydantic
 - Retrieval-Augmented Generation (RAG)
-- OpenAI embeddings
-- Persistent ChromaDB vector database
+- Semantic search with OpenAI embeddings
+- Persistent vector storage with ChromaDB
+- Structured intent routing with Pydantic
+- Streaming AI responses
 - Local `.txt` document ingestion
-- Web page ingestion
+- Web-page ingestion and HTML text extraction
 - Overlapping text chunking
-- Semantic retrieval
-- Streaming responses
+- Stable document identifiers using SHA-256 hashes
+- Streamlit-based chat interface
+- Environment-variable based API key management
 
 ## Tech Stack
 
@@ -27,11 +27,12 @@ The project explores semantic retrieval, document ingestion, web ingestion, inte
 - Pydantic
 - BeautifulSoup
 - Requests
+- python-dotenv
 
 ## Project Structure
 
 ```text
-t-doll-rag-assistant/
+rag-research-assistant/
 ├── app.py
 ├── core.py
 ├── data_ingestion.py
@@ -44,7 +45,32 @@ t-doll-rag-assistant/
     └── README.md
 ```
 
+Generated files, local environment files, API keys, vector-database data, and user-provided documents are excluded from version control.
+
+## How It Works
+
+The application processes a user query through several stages:
+
+1. The query is analyzed by a structured intent router.
+2. The router selects one of three routes:
+   - `EXTERNAL_KNOWLEDGE`
+   - `PERSONAL_PROFILE`
+   - `CHITCHAT`
+3. Queries requiring external knowledge are converted into a semantic search query.
+4. ChromaDB retrieves the most relevant indexed document chunks.
+5. Retrieved context and recent conversation history are passed to the language model.
+6. The generated response is streamed to the Streamlit interface.
+
+For external-knowledge queries, the assistant is instructed to answer only from retrieved context and to indicate when the indexed knowledge base does not contain enough information.
+
 ## Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/mesalp01/rag-research-assistant.git
+cd rag-research-assistant
+```
 
 Create a virtual environment:
 
@@ -52,33 +78,56 @@ Create a virtual environment:
 python -m venv .venv
 ```
 
-Activate it on Windows:
+Activate it on Windows PowerShell:
 
-```bash
-.venv\Scripts\activate
+```powershell
+.\.venv\Scripts\Activate.ps1
 ```
 
-Install dependencies:
+Or on Windows Command Prompt:
+
+```cmd
+.venv\Scripts\activate.bat
+```
+
+Install the dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Create a `.env` file based on `.env.example`:
+## Environment Configuration
+
+Create a `.env` file in the project root.
+
+You can use `.env.example` as a template:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-## Document Ingestion
+Do not commit your real API key to version control.
 
-Place `.txt` files inside the `documents/` directory and run:
+## Local Document Ingestion
+
+Place `.txt` files inside the `documents/` directory.
+
+Then run:
 
 ```bash
 python data_ingestion.py
 ```
 
-## Web Ingestion
+The script:
+
+- scans the directory for text files,
+- splits documents into overlapping chunks,
+- generates embeddings,
+- and stores the chunks in ChromaDB.
+
+User-provided `.txt` files inside `documents/` are ignored by Git.
+
+## Web Content Ingestion
 
 Run:
 
@@ -88,38 +137,81 @@ python web_ingest.py
 
 Enter a URL when prompted.
 
+The script extracts paragraph text from the page, creates overlapping chunks, and stores them in the same ChromaDB knowledge base.
+
+Example:
+
+```text
+Enter a URL to ingest: https://en.wikipedia.org/wiki/Artificial_intelligence
+```
+
 ## Running the Application
+
+Start the Streamlit interface:
 
 ```bash
 streamlit run app.py
 ```
 
-## How It Works
+Then open the local Streamlit address shown in the terminal.
 
-1. The user submits a query through the Streamlit interface.
-2. An LLM-based router classifies the query.
-3. External-knowledge queries trigger semantic retrieval from ChromaDB.
-4. Retrieved context is supplied to the language model.
-5. The model generates a streamed response grounded in the retrieved context.
+## Retrieval Architecture
+
+```text
+User Query
+    |
+    v
+Intent Router
+    |
+    +--------------------+
+    |                    |
+    v                    v
+Chitchat          External Knowledge
+                         |
+                         v
+                  Semantic Search
+                         |
+                         v
+                     ChromaDB
+                         |
+                         v
+                 Retrieved Context
+                         |
+                         v
+                    OpenAI Model
+                         |
+                         v
+                Streamed Response
+```
 
 ## Current Limitations
 
-- The personal-profile memory route is not yet implemented.
-- Web extraction currently focuses mainly on paragraph text.
-- Retrieval currently uses a fixed top-k value.
-- Retrieval quality evaluation has not yet been implemented.
-- The application depends on the OpenAI API.
+- Only `.txt` files are supported by the local document-ingestion script.
+- Web extraction primarily uses HTML paragraph elements.
+- JavaScript-rendered pages may not be extracted correctly.
+- Retrieval currently returns a small fixed number of document chunks.
+- The personal-profile route is reserved for future development and is not currently implemented.
+- The project does not currently include reranking or retrieval-quality evaluation.
 
-## Future Work
+## Possible Future Improvements
 
-- Retrieval quality evaluation
-- Source citations in generated responses
+- PDF and additional document-format support
 - Metadata filtering
-- Improved chunking strategies
-- Conversation-memory improvements
-- Support for additional document formats
-- Configurable retrieval parameters
+- Hybrid keyword and vector search
+- Retrieval reranking
+- Configurable chunking strategies
+- Source citations in generated responses
+- Retrieval evaluation metrics
+- Improved web-content extraction
+- User-specific memory
+- Automated testing
 
-## About
+## Purpose
 
-This project was developed as a learning project focused on the practical components of modern LLM applications, including embeddings, vector databases, RAG pipelines, structured routing, and prompt-based response control.
+This project was developed as a practical exploration of Retrieval-Augmented Generation, vector databases, semantic search, structured LLM routing, and document-processing pipelines.
+
+Its main goal is to demonstrate how external information can be indexed, retrieved semantically, and supplied as grounded context to a language model.
+
+## License
+
+This project is currently provided for educational and demonstration purposes.

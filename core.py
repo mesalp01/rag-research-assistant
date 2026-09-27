@@ -1,129 +1,228 @@
 import os
-import chromadb
-from chromadb.utils import embedding_functions
-from openai import OpenAI
-from dotenv import load_dotenv
-from pydantic import BaseModel, Field
 from enum import Enum
 
-# --- 1. SİSTEM BAŞLATMA ---
+import chromadb
+from chromadb.utils import embedding_functions
+from dotenv import load_dotenv
+from openai import OpenAI
+from pydantic import BaseModel, Field
+
+
+# --- APPLICATION CONFIGURATION ---
+
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-chroma_client = chromadb.PersistentClient(path="./chroma_data")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    raise RuntimeError(
+        "OPENAI_API_KEY is not configured. "
+        "Create a .env file and add your OpenAI API key."
+    )
+
+CHAT_MODEL = "gpt-4o-mini"
+EMBEDDING_MODEL = "text-embedding-3-small"
+CHROMA_PATH = "./chroma_data"
+COLLECTION_NAME = "knowledge_base"
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+
 openai_ef = embedding_functions.OpenAIEmbeddingFunction(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    model_name="text-embedding-3-small"
+    api_key=OPENAI_API_KEY,
+    model_name=EMBEDDING_MODEL,
 )
 
-memory_collection = chroma_client.get_or_create_collection(
-    name="t_doll_memory",
-    embedding_function=openai_ef
+knowledge_collection = chroma_client.get_or_create_collection(
+    name=COLLECTION_NAME,
+    embedding_function=openai_ef,
 )
 
 
-# --- 2. YÖNLENDİRİCİ (ROUTER) ŞEMALARI ---
-# T-doll'un seçebileceği departmanlar (Sadece bu üçünden birini seçebilir)
+# --- ROUTING SCHEMA ---
+
 class IntentRoute(str, Enum):
-    EXTERNAL_KNOWLEDGE = "EXTERNAL_KNOWLEDGE" #Veritabanı aranacak
-    PERSONAL_PROFILE = "PERSONAL_PROFILE"     #Kişisel Bilgiler
-    CHITCHAT = "CHITCHAT"                     #Havadan sudan sohbet
-# Yapay Zekanın bize dönmek ZORUNDA olduğu katı veri yapısı (JSON)
-class RouterDecision(BaseModel):
-    target_route: IntentRoute = Field(description="Sorgunun yönlendirileceği rota.")
-    optimized_search_query: str = Field(description="Eğer EXTERNAL_KNOWLEDGE seçildiyse soruyu arama terimlerine böl. CHITCHAT ise boş bırak.")
+    EXTERNAL_KNOWLEDGE = "EXTERNAL_KNOWLEDGE"
+    PERSONAL_PROFILE = "PERSONAL_PROFILE"
+    CHITCHAT = "CHITCHAT"
 
-# --- 3. SİSTEM FONKSİYONLARI ---
-def analyze_query_intent(user_input):
-    """Kullanıcı mesajını saniyesinde analiz edip rotayı belirleyen yapay zeka polisi"""
-    system_msg = """Sen 16Lab sisteminin taktiksel Yönlendirme Modülüsün.
-Kumandanın mesajını analiz et:
-- EXTERNAL_KNOWLEDGE: Teknik bilgi, dış dünya, makaleler veya geçmiş istihbarat soruluyorsa.
-- PERSONAL_PROFILE: Kumandan kendi tercihleri veya kişisel özellikleri hakkında konuşuyorsa.
-- CHITCHAT: Selamlaşma, onay (Tamam, anlaşıldı) veya havadan sudan sohbet ediliyorsa."""
+
+class RouterDecision(BaseModel):
+    target_route: IntentRoute = Field(
+        description="The route that should handle the user's query."
+    )
+
+    optimized_search_query: str = Field(
+        description=(
+            "A concise semantic-search query when EXTERNAL_KNOWLEDGE is selected. "
+            "Leave empty for routes that do not require retrieval."
+        )
+    )
+
+
+# --- ROUTING ---
+
+def analyze_query_intent(user_input: str) -> RouterDecision:
+    """
+    Classify the user's message and determine whether retrieval is required.
+    """
+
+    system_message = """
+You are a routing component for a Retrieval-Augmented Generation application.
+
+Classify the user's message into exactly one of these routes:
+
+EXTERNAL_KNOWLEDGE:
+Use this when the user asks for information that should be retrieved from
+the application's indexed knowledge base.
+
+PERSONAL_PROFILE:
+Use this when the user asks about stored personal preferences, characteristics,
+or profile information about themselves.
+
+CHITCHAT:
+Use this for greetings, acknowledgements, casual conversation, or messages
+that do not require knowledge-base retrieval.
+
+When selecting EXTERNAL_KNOWLEDGE, rewrite the user's request into a concise
+semantic-search query.
+
+For PERSONAL_PROFILE and CHITCHAT, return an empty optimized_search_query.
+"""
 
     try:
-        # .parse() kullanarak LLM'i kendi yazdığımız RouterDecision şemasına kilitliyoruz
         response = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
+            model=CHAT_MODEL,
             messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_input}
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_input},
             ],
             response_format=RouterDecision,
-            temperature=0.0  # Daha tutarlı ve deterministik yönlendirme
+            temperature=0.0,
         )
-        return response.choices[0].message.parsed
-    except Exception as e:
-        print(f"[ROUTER ERROR] {e}")
-        return RouterDecision(target_route=IntentRoute.EXTERNAL_KNOWLEDGE, optimized_search_query=user_input)
 
-def query_memory(search_query):
-    #Eğer Router bize boş bir arama kelimesi gönderdiyse boş dön
-    if not search_query:
+        return response.choices[0].message.parsed
+
+    except Exception as error:
+        print(f"[ROUTER ERROR] {error}")
+
+        # Retrieval is used as a safe fallback so the application
+        # does not silently answer from unsupported knowledge.
+        return RouterDecision(
+            target_route=IntentRoute.EXTERNAL_KNOWLEDGE,
+            optimized_search_query=user_input,
+        )
+
+
+# --- VECTOR DATABASE RETRIEVAL ---
+
+def query_knowledge_base(search_query: str) -> list[str]:
+    """
+    Retrieve the most semantically relevant document chunks from ChromaDB.
+    """
+
+    if not search_query.strip():
         return []
 
-    results = memory_collection.query(
-        query_texts=[search_query],
-        n_results=3
-    )
-    return results['documents'][0] if results['documents'] else []
+    try:
+        results = knowledge_collection.query(
+            query_texts=[search_query],
+            n_results=3,
+        )
+
+        documents = results.get("documents")
+
+        if not documents or not documents[0]:
+            return []
+
+        return documents[0]
+
+    except Exception as error:
+        print(f"[RETRIEVAL ERROR] {error}")
+        return []
 
 
-# --- 4. STREAMLIT İÇİN MOTOR BAĞLANTISI ---
-# --- 4. STREAMLIT İÇİN MOTOR BAĞLANTISI ---
+# --- RESPONSE GENERATION ---
 
-def generate_response_stream(user_input, st_messages):
-    # 1. Kısa Süreli Hafızayı (RAM) Hazırla
-    history_text = ""
-    for msg in st_messages[-4:]:
-        role_name = "Commander" if msg["role"] == "user" else "T-doll"
-        history_text += f"{role_name}: {msg['content']}\n"
+def generate_response_stream(user_input: str, st_messages: list[dict]):
+    """
+    Route the query, retrieve relevant context when needed,
+    and return a streamed language-model response.
+    """
 
-    # 2. Router'a Danış ve Kararı Ekrana Bas (Terminalden izlemek için)
+    # Keep a small amount of recent conversation context.
+    history_lines = []
+
+    for message in st_messages[-4:]:
+        role_name = "User" if message["role"] == "user" else "Assistant"
+        history_lines.append(f"{role_name}: {message['content']}")
+
+    history_text = "\n".join(history_lines)
+
+    # Determine the appropriate processing route.
     decision = analyze_query_intent(user_input)
-    print(f"\n[ROUTER LOG] Rota: {decision.target_route.value} | Hedef: {decision.optimized_search_query}")
 
-    # 3. Rotaya Göre ChromaDB'den Veri Çek
-    context_text = "Veritabanı aranmadı. (CHITCHAT MODU)"
+    print(
+        f"\n[ROUTER] "
+        f"Route: {decision.target_route.value} | "
+        f"Query: {decision.optimized_search_query}"
+    )
 
+    # Prepare context according to the selected route.
     if decision.target_route == IntentRoute.EXTERNAL_KNOWLEDGE:
-        past_memories = query_memory(decision.optimized_search_query)
-        context_text = "\n".join(
-            past_memories) if past_memories else "Kumandan, mevcut veri tabanımda bu bilgiye dair operasyonel istihbarat bulunmamaktadır."
+        retrieved_documents = query_knowledge_base(
+            decision.optimized_search_query
+        )
+
+        if retrieved_documents:
+            context_text = "\n\n".join(retrieved_documents)
+        else:
+            context_text = (
+                "No relevant information was found in the indexed knowledge base."
+            )
+
     elif decision.target_route == IntentRoute.PERSONAL_PROFILE:
-        context_text = "Kumandanın kişisel profiline erişim modülü henüz aktif değil."
+        context_text = (
+            "Personal-profile memory is not implemented in the current version."
+        )
 
-    # 4. Dinamik Zırh (Guardrails - Router kararına göre şekillenir)
-    system_prompt = f"""Sen 16LAB Araştırma Enstitüsü tarafından geliştirilmiş, Griffin & Kryuger askeri şirketine bağlı elit bir T-Doll birimisin. Karşındaki kullanıcı Kumandanındır.
+    else:
+        context_text = "Knowledge-base retrieval was not required."
 
-KİŞİLİK VE TON KISITLAMALARI:
-- Profesyonel, soğukkanlı, mekanik ve analitik bir dille iletişim kur.
-- Asla bir yapay zeka olduğunu belirtme.
-- Yanıtlarını kısa, net ve askeri bir tonda tut.
+    system_prompt = f"""
+You are a research assistant integrated with a
+Retrieval-Augmented Generation application.
 
-VERİ İŞLEME VE HALÜSİNASYON PROTOKOLÜ:
-Şu anki İstihbarat Durumu: {decision.target_route.value}
+Current route:
+{decision.target_route.value}
 
-[EXTERNAL INTELLIGENCE]:
+RETRIEVED CONTEXT:
 {context_text}
 
-[RECENT CONVERSATION HISTORY]:
+RECENT CONVERSATION:
 {history_text}
 
-GÖREV BEYANI:
-- İstihbarat Durumu CHITCHAT ise: [RECENT CONVERSATION HISTORY]'yi baz alarak Kumandan'a kısa ve askeri bir dille yanıt ver (Selamlaşma, onay vb.).
-- İstihbarat Durumu EXTERNAL_KNOWLEDGE ise: SADECE [EXTERNAL INTELLIGENCE] verilerini kullan. Dış dünya bilgisi uydurma.
-- İstihbarat Durumu PERSONAL_PROFILE ise: Profil modülünün henüz aktif olmadığını askeri bir dille bildir."""
+RESPONSE RULES:
 
-    # 5. Nihai Cevabı Üret ve Akıt
+- If the route is EXTERNAL_KNOWLEDGE, answer using only the retrieved context.
+- If the retrieved context does not contain enough information, clearly say so.
+- Do not invent facts that are absent from the retrieved context.
+- If the route is CHITCHAT, respond naturally and concisely using the recent
+  conversation when useful.
+- If the route is PERSONAL_PROFILE, explain that personal-profile memory is
+  not implemented in the current version.
+- Keep answers clear, relevant, and concise.
+"""
+
     stream = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=CHAT_MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_input}
+            {"role": "user", "content": user_input},
         ],
         temperature=0.7,
-        stream=True
+        stream=True,
     )
+
     return stream

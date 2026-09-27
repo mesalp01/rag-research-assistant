@@ -1,7 +1,7 @@
-streamlit
-openai
-chromadb
-python-dotenv
-pydantic
-requests
-beautifulsoup4
+streamlit==1.64.0
+openai==3.19.2
+chromadb==1.5.9
+python-dotenv==1.2.3
+pydantic==2.13.5
+requests==2.34.2
+beautifulsoup4==4.15.0
