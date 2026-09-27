@@ -31,19 +31,15 @@ The project combines semantic retrieval, structured intent routing, local docume
 
 ## Project Structure
 
-```text
-rag-research-assistant/
-├── app.py
-├── core.py
-├── data_ingestion.py
-├── web_ingest.py
-├── requirements.txt
-├── .env.example
-├── .gitignore
-├── README.md
-└── documents/
-    └── README.md
-```
+- `app.py` — Streamlit user interface
+- `core.py` — intent routing, retrieval, and response generation
+- `data_ingestion.py` — local text-document ingestion
+- `web_ingest.py` — web-page extraction and ingestion
+- `requirements.txt` — Python dependencies
+- `.env.example` — environment-variable template
+- `.gitignore` — Git exclusions
+- `documents/`
+  - `README.md` — instructions for local documents
 
 Generated files, local environment files, API keys, vector-database data, and user-provided documents are excluded from version control.
 
@@ -142,7 +138,9 @@ The script extracts paragraph text from the page, creates overlapping chunks, an
 Example:
 
 ```text
-Enter a URL to ingest: https://en.wikipedia.org/wiki/Artificial_intelligence
+For example, you can ingest a public article such as:
+
+`https://en.wikipedia.org/wiki/Artificial_intelligence`
 ```
 
 ## Running the Application
@@ -157,32 +155,15 @@ Then open the local Streamlit address shown in the terminal.
 
 ## Retrieval Architecture
 
-```text
-User Query
-    |
-    v
-Intent Router
-    |
-    +--------------------+
-    |                    |
-    v                    v
-Chitchat          External Knowledge
-                         |
-                         v
-                  Semantic Search
-                         |
-                         v
-                     ChromaDB
-                         |
-                         v
-                 Retrieved Context
-                         |
-                         v
-                    OpenAI Model
-                         |
-                         v
-                Streamed Response
-```
+The application follows this flow:
+
+1. The user submits a query.
+2. The intent router classifies the request.
+3. If retrieval is required, the query is converted into a semantic-search query.
+4. ChromaDB returns the most relevant document chunks.
+5. Retrieved context is combined with recent conversation history.
+6. The OpenAI model generates a grounded response.
+7. The response is streamed back to the Streamlit interface.
 
 ## Current Limitations
 
