@@ -16,7 +16,7 @@ The project combines semantic retrieval, structured intent routing, local docume
 - Overlapping text chunking
 - Stable document identifiers using SHA-256 hashes
 - Streamlit-based chat interface
-- Environment-variable based API key management
+- Environment-variable-based API key management
 
 ## Tech Stack
 
@@ -135,13 +135,9 @@ Enter a URL when prompted.
 
 The script extracts paragraph text from the page, creates overlapping chunks, and stores them in the same ChromaDB knowledge base.
 
-Example:
-
-```text
 For example, you can ingest a public article such as:
 
 `https://en.wikipedia.org/wiki/Artificial_intelligence`
-```
 
 ## Running the Application
 
@@ -192,7 +188,3 @@ The application follows this flow:
 This project was developed as a practical exploration of Retrieval-Augmented Generation, vector databases, semantic search, structured LLM routing, and document-processing pipelines.
 
 Its main goal is to demonstrate how external information can be indexed, retrieved semantically, and supplied as grounded context to a language model.
-
-## License
-
-This project is currently provided for educational and demonstration purposes.
