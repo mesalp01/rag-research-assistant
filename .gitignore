@@ -1,0 +1,28 @@
+# Environment variables
+.env
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDE files
+.idea/
+.vscode/
+
+# Generated ChromaDB database
+chroma_data/
+
+# User-provided knowledge documents
+documents/*.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

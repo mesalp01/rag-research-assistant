@@ -1,0 +1,7 @@
+streamlit
+openai
+chromadb
+python-dotenv
+pydantic
+requests
+beautifulsoup4
